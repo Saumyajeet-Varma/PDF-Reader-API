@@ -88,7 +88,14 @@ def store_text():
     filename = session.get('filename', 'unknown.pdf')
 
     if pdf_text == "":
-        return jsonify({"success": False, "message": "No data to store", "text": pdf_text}), 400
+        delete_files()
+        return jsonify({"success": False, "message": "No data to store"}), 400
+    
+    existing = pdf_collection.find_one({"filename": filename})
+
+    if existing:
+        delete_files()
+        return jsonify({"success": False, "message": f"Filename '{filename}' already exists in the database."}), 400
 
     pdf_collection.insert_one({
         "filename": filename,
