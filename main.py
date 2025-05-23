@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
@@ -9,11 +9,9 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# CORS(app, origins=["http://localhost:5500"])
 CORS(app, origins=[os.getenv("CORS_ORIGIN")])
 
-pdf_text = ""
-
+app.secret_key = os.getenv("SECRET_KEY")
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 
 ALLOWED_EXTENSIONS = {'pdf'}
@@ -22,16 +20,11 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def delete_files():
-
     folder = app.config['UPLOAD_FOLDER']
-
     for filename in os.listdir(folder):
-
         if filename == '.gitkeep':
             continue
-
         file_path = os.path.join(folder, filename)
-        
         try:
             if os.path.isfile(file_path):
                 os.remove(file_path)
@@ -44,8 +37,6 @@ def index():
 
 @app.route('/api/v1/extract-text', methods=['POST'])
 def extract_text():
-
-    global pdf_text
 
     if 'file' not in request.files:
         return jsonify({"success": False, "message": "No file part"}), 400
@@ -62,18 +53,23 @@ def extract_text():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    pdf_text = ""
+    extracted_text = ""
 
     with pdfplumber.open(filepath) as pdf:
         for page in pdf.pages:
-            pdf_text += page.extract_text()
+            text = page.extract_text()
+            if text:
+                extracted_text += text
 
-    return jsonify({"success": True, "message": "Text extracted successfully", "text": pdf_text, "filename": filename}), 200
+    session['pdf_text'] = extracted_text
+    session['filename'] = filename
+
+    return jsonify({"success": True, "message": "Text extracted successfully", "text": extracted_text, "filename": filename}), 200
 
 @app.route('/api/v1/get-text', methods=['GET'])
 def get_text():
 
-    global pdf_text
+    pdf_text = session.get('pdf_text', '')
 
     if pdf_text == "":
         return jsonify({"success": False, "message": "No data to store", "text": pdf_text}), 400
@@ -82,6 +78,8 @@ def get_text():
 
 @app.route('/api/v1/store-text', methods=['POST'])
 def store_text():
+
+    pdf_text = session.get('pdf_text', '')
 
     if pdf_text == "":
         return jsonify({"success": False, "message": "No data to store", "text": pdf_text}), 400
@@ -92,6 +90,9 @@ def store_text():
     
     
     delete_files()
+
+    session.pop('pdf_text', None)
+    session.pop('filename', None)
     
     return jsonify({"success": True, "message": "Stored", "text": pdf_text}), 200
 
