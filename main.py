@@ -4,10 +4,15 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import pdfplumber
+from pymongo import MongoClient
 
 load_dotenv()
 
 app = Flask(__name__)
+
+mongo_client = MongoClient(os.getenv("MONGO_URI"))
+mongo_db = mongo_client[os.getenv("MONGO_DB")]
+pdf_collection = mongo_db[os.getenv("MONGO_COLLECTION")]
 
 CORS(app, origins=[os.getenv("CORS_ORIGIN")])
 
@@ -80,14 +85,15 @@ def get_text():
 def store_text():
 
     pdf_text = session.get('pdf_text', '')
+    filename = session.get('filename', 'unknown.pdf')
 
     if pdf_text == "":
         return jsonify({"success": False, "message": "No data to store", "text": pdf_text}), 400
-    
-    # TODO: Logic to store data in DB
 
-
-    
+    pdf_collection.insert_one({
+        "filename": filename,
+        "text": pdf_text
+    })
     
     delete_files()
 
