@@ -9,10 +9,8 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# CORS(app, resources={r"/api/*": {"origins": "http://localhost:5500"}}, supports_credentials=True)
-# CORS(app, origins="http://localhost:5500", methods=["GET", "POST"], allow_headers=["Content-Type"])
-CORS(app, origins=["http://localhost:5500"])
-# CORS(app, origins=[os.getenv("CORS_ORIGIN")])
+# CORS(app, origins=["http://localhost:5500"])
+CORS(app, origins=[os.getenv("CORS_ORIGIN")])
 
 pdf_text = ""
 
@@ -23,6 +21,23 @@ ALLOWED_EXTENSIONS = {'pdf'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def delete_files():
+
+    folder = app.config['UPLOAD_FOLDER']
+
+    for filename in os.listdir(folder):
+
+        if filename == '.gitkeep':
+            continue
+
+        file_path = os.path.join(folder, filename)
+        
+        try:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            print(f"Error deleting file {file_path}: {e}")
+
 @app.route('/')
 def index():
     return "Hello World"
@@ -32,7 +47,6 @@ def extract_text():
 
     global pdf_text
 
-    print(request.files)
     if 'file' not in request.files:
         return jsonify({"success": False, "message": "No file part"}), 400
 
@@ -54,7 +68,7 @@ def extract_text():
         for page in pdf.pages:
             pdf_text += page.extract_text()
 
-    return jsonify({"success": True, "message": "Text extracted successfully", "text": pdf_text}), 200
+    return jsonify({"success": True, "message": "Text extracted successfully", "text": pdf_text, "filename": filename}), 200
 
 @app.route('/api/v1/get-text', methods=['GET'])
 def get_text():
@@ -71,6 +85,13 @@ def store_text():
 
     if pdf_text == "":
         return jsonify({"success": False, "message": "No data to store", "text": pdf_text}), 400
+    
+    # TODO: Logic to store data in DB
+
+
+    
+    
+    delete_files()
     
     return jsonify({"success": True, "message": "Stored", "text": pdf_text}), 200
 
