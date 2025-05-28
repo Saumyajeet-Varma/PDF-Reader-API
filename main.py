@@ -4,6 +4,9 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import pdfplumber
+from sentence_transformers import SentenceTransformer
+import numpy as np
+import faiss
 
 load_dotenv()
 
@@ -30,6 +33,23 @@ def delete_files():
                 os.remove(file_path)
         except Exception as e:
             print(f"Error deleting file {file_path}: {e}")
+
+def chunk_text(text, chunk_size=500, overlap=100):
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = " ".join(words[i:i + chunk_size])
+        chunks.append(chunk)
+    return chunks
+
+def embed_chunks(chunks, model):
+    return model.encode(chunks, show_progress_bar=True)
+
+def build_faiss_index(embeddings):
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dim)
+    index.add(embeddings)
+    return index
 
 @app.route('/')
 def index():
@@ -82,12 +102,24 @@ def store_text():
     pdf_text = session.get('pdf_text', '')
 
     if pdf_text == "":
+        delete_files()
         return jsonify({"success": False, "message": "No data to store", "text": pdf_text}), 400
     
-    # TODO: Logic to store data in DB
+    # Step 1: Chunk the text
+    chunks = chunk_text(pdf_text)
 
+    # Step 2: Load embedding model
+    model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    
+    # Step 3: Embed chunks
+    embeddings = embed_chunks(chunks, model)
+    embeddings_np = np.array(embeddings).astype("float32")
+
+    # Step 4: Create FAISS index
+    index = build_faiss_index(embeddings_np)
+
+    # Step 5: Save index to disk
+    faiss.write_index(index, "faiss_index.index")
     
     delete_files()
 
