@@ -7,6 +7,8 @@ import pdfplumber
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import faiss
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
 load_dotenv()
 
@@ -17,8 +19,29 @@ CORS(app, origins=[os.getenv("CORS_ORIGIN")])
 app.secret_key = os.getenv("SECRET_KEY")
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///documents.db'
+db = SQLAlchemy(app)
+
+model = SentenceTransformer(os.getenv("MODEL"))
+
 ALLOWED_EXTENSIONS = {'pdf'}
 
+# ---------- Models ----------
+class Document(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(120), unique=True, nullable=False)
+    index_path = db.Column(db.String(120), nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class TextChunk(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'), nullable=False)
+    chunk = db.Column(db.Text, nullable=False)
+
+with app.app_context():
+    db.create_all()
+
+# ---------- Utils ----------
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -51,6 +74,7 @@ def build_faiss_index(embeddings):
     index.add(embeddings)
     return index
 
+# ---------- Routes ----------
 @app.route('/')
 def index():
     return "Hello World"
@@ -100,33 +124,58 @@ def get_text():
 def store_text():
 
     pdf_text = session.get('pdf_text', '')
+    filename = session.get('filename', '')
+
+    base_filename = filename.split('.')[0]
+
+    print(filename)
 
     if pdf_text == "":
         delete_files()
         return jsonify({"success": False, "message": "No data to store", "text": pdf_text}), 400
     
-    # Step 1: Chunk the text
     chunks = chunk_text(pdf_text)
-
-    # Step 2: Load embedding model
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-
-    # Step 3: Embed chunks
     embeddings = embed_chunks(chunks, model)
     embeddings_np = np.array(embeddings).astype("float32")
 
-    # Step 4: Create FAISS index
     index = build_faiss_index(embeddings_np)
+    index_path = f"{base_filename}_faiss.index"
+    faiss.write_index(index, index_path)
 
-    # Step 5: Save index to disk
-    faiss.write_index(index, "faiss_index.index")
+    document = Document(filename=filename, index_path=index_path)
+    db.session.add(document)
+    db.session.commit()
+
+    for chunk in chunks:
+        db.session.add(TextChunk(document_id=document.id, chunk=chunk))
+    db.session.commit()
     
     delete_files()
 
     session.pop('pdf_text', None)
     session.pop('filename', None)
     
-    return jsonify({"success": True, "message": "Stored", "text": pdf_text}), 200
+    return jsonify({"success": True, "message": "Stored in DB and indexed", "text": pdf_text}), 200
+
+@app.route('/api/v1/search', methods=['POST'])
+def search():
+
+    data = request.get_json()
+    query = data.get('query', '')
+    filename = data.get('filename', '')
+
+    if not query or not filename:
+        return jsonify({"success": False, "message": "Query and filename required"}), 400
+    
+    document = Document.query.filter_by(filename=filename).first()
+
+    if not document:
+        return jsonify({"success": False, "message": "Document not found"}), 404
+    
+    # TODO: Logic For searching
+    results = None
+
+    return jsonify({"success": True, "message": "Search complete", "results": results}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
