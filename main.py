@@ -57,7 +57,7 @@ def delete_files():
         except Exception as e:
             print(f"Error deleting file {file_path}: {e}")
 
-def chunk_text(text, chunk_size=500, overlap=100):
+def chunk_text(text, chunk_size=100, overlap=20):
     words = text.split()
     chunks = []
     for i in range(0, len(words), chunk_size - overlap):
@@ -172,8 +172,14 @@ def search():
     if not document:
         return jsonify({"success": False, "message": "Document not found"}), 404
     
-    # TODO: Logic For searching
-    results = None
+    index = faiss.read_index(document.index_path)
+    chunks = [c.chunk for c in TextChunk.query.filter_by(document_id=document.id).all()]
+
+    query_embedding = model.encode([query]).astype("float32")
+
+    distances, indices = index.search(query_embedding, 5)
+
+    results = [chunks[i] for i in indices[0] if i < len(chunks)]
 
     return jsonify({"success": True, "message": "Search complete", "results": results}), 200
 
