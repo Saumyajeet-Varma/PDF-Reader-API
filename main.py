@@ -21,8 +21,18 @@ app.config['UPLOAD_FOLDER'] = 'static/uploads'
 
 ALLOWED_EXTENSIONS = {'pdf'}
 
+# ---------- UTILS ----------
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def extract_text(filepath):
+    extracted_text = ""
+    with pdfplumber.open(filepath) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            if text:
+                extracted_text += text
+    return extracted_text
 
 def delete_files():
     folder = app.config['UPLOAD_FOLDER']
@@ -36,6 +46,7 @@ def delete_files():
         except Exception as e:
             print(f"Error deleting file {file_path}: {e}")
 
+# ---------- ROUTES ----------
 @app.route('/')
 def index():
     return "Hello World"
@@ -58,13 +69,7 @@ def extract_text():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    extracted_text = ""
-
-    with pdfplumber.open(filepath) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                extracted_text += text
+    extracted_text = extract_text(filepath)
 
     session['pdf_text'] = extracted_text
     session['filename'] = filename
